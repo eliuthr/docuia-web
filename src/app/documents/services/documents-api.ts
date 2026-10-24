@@ -21,4 +21,8 @@ export class DocumentsApi {
   recentDocumentsUrl(limit = RECENT_DOCUMENTS_LIMIT): string {
     return `${this.documentsUrl}?limit=${limit}`;
   }
+
+  documentUrl(id: string): string {
+    return `${this.documentsUrl}/${encodeURIComponent(id)}`;
+  }
 }

@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { API_BASE_URL } from '../../../core/api-base-url';
 import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { DocumentDto } from '../../models/document.model';
@@ -16,6 +17,9 @@ const pendingDocument: DocumentDto = {
   status: 'pending',
   pageCount: null,
   failureReason: null,
+  documentType: null,
+  summary: null,
+  extractedData: null,
   createdAt: '2026-10-22T18:00:00.000Z',
   updatedAt: '2026-10-22T18:00:00.000Z',
 };
@@ -33,6 +37,7 @@ describe('DocumentsPage', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideRouter([]),
         { provide: API_BASE_URL, useValue: 'http://api.test' },
       ],
     });

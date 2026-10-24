@@ -1,12 +1,13 @@
 import { DatePipe } from '@angular/common';
 import { Component, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { DocumentDto } from '../../models/document.model';
 import { formatFileSize } from '../../utils/format-file-size';
 import { StatusBadge } from '../status-badge/status-badge';
 
 @Component({
   selector: 'app-document-list',
-  imports: [DatePipe, StatusBadge],
+  imports: [DatePipe, RouterLink, StatusBadge],
   template: `
     <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
       <table class="w-full text-left text-sm">
@@ -26,7 +27,12 @@ import { StatusBadge } from '../status-badge/status-badge';
           @for (document of documents(); track document.id) {
             <tr>
               <td class="max-w-56 truncate px-4 py-3" [title]="document.originalName">
-                {{ document.originalName }}
+                <a
+                  [routerLink]="['/documents', document.id]"
+                  class="font-medium text-blue-800 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-800"
+                >
+                  {{ document.originalName }}
+                </a>
               </td>
               <td class="whitespace-nowrap px-4 py-3">{{ formatFileSize(document.sizeBytes) }}</td>
               <td class="px-4 py-3">

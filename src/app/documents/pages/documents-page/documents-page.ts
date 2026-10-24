@@ -1,21 +1,32 @@
 import { httpResource } from '@angular/common/http';
-import { Component, effect, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { apiErrorMessage } from '../../../core/api-error-message';
+import { refreshWhile } from '../../../core/refresh-while';
 import { DocumentList } from '../../components/document-list/document-list';
 import { UploadForm } from '../../components/upload-form/upload-form';
 import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { DocumentDto } from '../../models/document.model';
 import { DocumentsApi } from '../../services/documents-api';
 import { isInProgress } from '../../utils/document-status';
+import { QuestionPanel } from '../../../questions/components/question-panel/question-panel';
+import { QuestionTarget } from '../../../questions/models/answer-event.model';
+
+const COLLECTION_TARGET: QuestionTarget = { kind: 'collection' };
 
 @Component({
   selector: 'app-documents-page',
-  imports: [DocumentList, UploadForm],
+  imports: [DocumentList, QuestionPanel, UploadForm],
   template: `
     <div class="space-y-10">
       <section class="rounded-lg border border-slate-200 bg-white p-6">
         <app-upload-form (uploaded)="documents.reload()" />
       </section>
+
+      <app-question-panel
+        heading="Ask your documents"
+        placeholder="How much do my invoices add up to?"
+        [target]="collectionTarget"
+      />
 
       <section aria-labelledby="recent-heading" class="space-y-4">
         <h2 id="recent-heading" class="text-lg font-semibold text-slate-900">Recent documents</h2>
@@ -50,23 +61,13 @@ export class DocumentsPage {
   protected readonly documents = httpResource<DocumentDto[]>(() => this.api.recentDocumentsUrl());
 
   protected readonly errorMessage = apiErrorMessage;
+  protected readonly collectionTarget = COLLECTION_TARGET;
 
   constructor() {
-    this.refreshWhileInProgress();
-  }
-
-  /**
-   * Cada respuesta es un arreglo nuevo, así que este effect se vuelve a ejecutar
-   * tras cada refresco y programa el siguiente solo mientras haya documentos en proceso.
-   */
-  private refreshWhileInProgress(): void {
-    effect((onCleanup) => {
-      const documents = this.documents.hasValue() ? this.documents.value() : [];
-      if (!documents.some((document) => isInProgress(document.status))) {
-        return;
-      }
-      const timer = setTimeout(() => this.documents.reload(), STATUS_POLL_INTERVAL_MS);
-      onCleanup(() => clearTimeout(timer));
-    });
+    refreshWhile(
+      this.documents,
+      (documents) => documents.some((document) => isInProgress(document.status)),
+      STATUS_POLL_INTERVAL_MS,
+    );
   }
 }

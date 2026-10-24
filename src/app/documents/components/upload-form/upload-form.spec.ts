@@ -13,6 +13,9 @@ const uploadedDocument: DocumentDto = {
   status: 'pending',
   pageCount: null,
   failureReason: null,
+  documentType: null,
+  summary: null,
+  extractedData: null,
   createdAt: '2026-10-22T18:00:00.000Z',
   updatedAt: '2026-10-22T18:00:00.000Z',
 };
