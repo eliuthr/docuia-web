@@ -2,34 +2,47 @@
   <h2 [id]="panelId + '-heading'" class="text-lg font-semibold text-slate-900">{{ heading() }}</h2>
 
   @if (exchanges().length > 0) {
-    <ol class="space-y-4" [attr.aria-busy]="isStreaming()">
-      @for (exchange of exchanges(); track exchange.id) {
-        <li class="space-y-2">
-          <p
-            class="ml-auto w-fit max-w-[85%] whitespace-pre-line wrap-anywhere rounded-lg bg-blue-800 px-4 py-2 text-white"
-          >
-            <span class="sr-only">You asked: </span>{{ exchange.question }}
-          </p>
-          <div class="max-w-[85%] rounded-lg border border-slate-200 bg-white px-4 py-3">
-            <span class="sr-only">Answer: </span>
-            @if (exchange.answer) {
-              <p class="whitespace-pre-line wrap-anywhere text-slate-900">{{ exchange.answer }}</p>
-            }
-            @if (exchange.activeTool) {
-              <p class="text-sm italic text-slate-600">{{ exchange.activeTool }}</p>
-            } @else if (exchange.status === 'streaming' && !exchange.answer) {
-              <p class="text-sm italic text-slate-600">Thinking…</p>
-            }
-            @if (exchange.error) {
-              <p class="mt-1 text-sm text-red-800">{{ exchange.error }}</p>
-            }
-            @if (exchange.status === 'stopped') {
-              <p class="mt-1 text-sm text-slate-600">Stopped.</p>
-            }
-          </div>
-        </li>
-      }
-    </ol>
+    <!-- Altura máxima con scroll propio: la conversación no empuja el resto de la página. -->
+    <div
+      #conversation
+      role="region"
+      aria-label="Conversation"
+      tabindex="0"
+      class="max-h-[28rem] overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-800"
+      (scroll)="onConversationScroll()"
+    >
+      <ol class="space-y-4" [attr.aria-busy]="isStreaming()">
+        @for (exchange of exchanges(); track exchange.id) {
+          <li class="space-y-2">
+            <p
+              class="ml-auto w-fit max-w-[85%] whitespace-pre-line wrap-anywhere rounded-lg bg-blue-800 px-4 py-2 text-white"
+            >
+              <span class="sr-only">You asked: </span>{{ exchange.question }}
+            </p>
+            <div class="max-w-[85%] rounded-lg border border-slate-200 bg-white px-4 py-3">
+              <span class="sr-only">Answer: </span>
+              @if (exchange.answer) {
+                <p
+                  class="whitespace-pre-line wrap-anywhere text-slate-900"
+                  [textContent]="displayAnswer(exchange.answer)"
+                ></p>
+              }
+              @if (exchange.activeTool) {
+                <p class="text-sm italic text-slate-600">{{ exchange.activeTool }}</p>
+              } @else if (exchange.status === 'streaming' && !exchange.answer) {
+                <p class="text-sm italic text-slate-600">Thinking…</p>
+              }
+              @if (exchange.error) {
+                <p class="mt-1 text-sm text-red-800">{{ exchange.error }}</p>
+              }
+              @if (exchange.status === 'stopped') {
+                <p class="mt-1 text-sm text-slate-600">Stopped.</p>
+              }
+            </div>
+          </li>
+        }
+      </ol>
+    </div>
   }
 
   <p class="sr-only" role="status">{{ announcement() }}</p>

@@ -8,7 +8,9 @@ import { ExtractedDataView } from '../../components/extracted-data/extracted-dat
 import { StatusBadge } from '../../components/status-badge/status-badge';
 import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { DocumentDto } from '../../models/document.model';
+import { DocumentEvents } from '../../services/document-events';
 import { DocumentsApi } from '../../services/documents-api';
+import { reloadOnDocumentChanges } from '../../services/reload-on-document-changes';
 import { isInProgress } from '../../utils/document-status';
 import { documentTypeLabel } from '../../utils/document-type-label';
 import { pageCountLabel } from '../../utils/page-count-label';
@@ -97,6 +99,7 @@ export class DocumentDetailPage {
   readonly id = input.required<string>();
 
   private readonly api = inject(DocumentsApi);
+  private readonly events = inject(DocumentEvents);
 
   protected readonly document = httpResource<DocumentDto>(() => this.api.documentUrl(this.id()));
 
@@ -114,9 +117,14 @@ export class DocumentDetailPage {
   }));
 
   constructor() {
+    reloadOnDocumentChanges(
+      this.document,
+      (change) => change.kind === 'status' && change.documentId === this.id(),
+    );
+    // Respaldo: solo se consulta periódicamente mientras la conexión SSE está caída.
     refreshWhile(
       this.document,
-      (document) => isInProgress(document.status),
+      (document) => !this.events.isConnected() && isInProgress(document.status),
       STATUS_POLL_INTERVAL_MS,
     );
   }

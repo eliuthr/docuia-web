@@ -3,7 +3,9 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { API_BASE_URL } from '../../../core/api-base-url';
-import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
+import { EVENT_SOURCE_FACTORY } from '../../../core/event-source-factory';
+import { FakeEventSource, fakeEventSourceFactory } from '../../../core/testing/fake-event-source';
+import { EVENT_RELOAD_DELAY_MS, STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { buildDocument } from '../../testing/build-document';
 import { DocumentDetailPage } from './document-detail-page';
 
@@ -17,12 +19,14 @@ describe('DocumentDetailPage', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    FakeEventSource.reset();
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: API_BASE_URL, useValue: 'http://api.test' },
+        { provide: EVENT_SOURCE_FACTORY, useValue: fakeEventSourceFactory },
       ],
     });
     http = TestBed.inject(HttpTestingController);
@@ -89,7 +93,31 @@ describe('DocumentDetailPage', () => {
     expect(element.textContent).not.toContain('Ask about this document');
   });
 
-  it('refreshes while the document is being processed and stops when ready', async () => {
+  it('reloads when an event about this document arrives, not for other documents', async () => {
+    await respond(buildDocument({ status: 'processing' }));
+    const events = FakeEventSource.latest();
+    events.open();
+
+    events.emit('document.updated', '{"documentId":"another-id","status":"ready"}');
+    await settle(EVENT_RELOAD_DELAY_MS);
+    http.expectNone(DOCUMENT_URL);
+
+    events.emit('document.updated', `{"documentId":"${DOCUMENT_ID}","status":"ready"}`);
+    await settle(EVENT_RELOAD_DELAY_MS);
+    await respond(buildDocument());
+    expect(element.textContent).toContain('Ready');
+  });
+
+  it('does not poll while the event stream is connected', async () => {
+    FakeEventSource.latest().open();
+    await respond(buildDocument({ status: 'processing' }));
+
+    await settle(STATUS_POLL_INTERVAL_MS);
+
+    http.expectNone(DOCUMENT_URL);
+  });
+
+  it('polls while the event stream is down and stops when ready', async () => {
     await respond(
       buildDocument({
         status: 'processing',

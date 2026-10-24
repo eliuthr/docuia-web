@@ -134,6 +134,17 @@ describe('QuestionPanel', () => {
     expect(answerText()).not.toContain('Searching documents…');
   });
 
+  it('shows the answer without Markdown bold markers', async () => {
+    await send('¿Cuánto pagué?');
+
+    stream.push({ type: 'delta', text: 'Pagaste **43.' });
+    stream.push({ type: 'delta', text: '000 COP**.' });
+    await settle();
+
+    expect(answerText()).toContain('Pagaste 43.000 COP.');
+    expect(answerText()).not.toContain('**');
+  });
+
   it('announces when the answer is ready and enables sending again', async () => {
     await send('¿Cuánto suman?');
     expect(element.querySelector('ol')?.getAttribute('aria-busy')).toBe('true');

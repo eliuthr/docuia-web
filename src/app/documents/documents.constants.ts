@@ -9,5 +9,8 @@ export const ACCEPT_ATTRIBUTE = '.pdf,.png,.jpg,.jpeg';
 
 export const RECENT_DOCUMENTS_LIMIT = 20;
 
-/** Cada cuánto se refresca la lista mientras un documento sigue en proceso. */
+/** Cada cuánto se refresca la lista mientras un documento sigue en proceso y no hay conexión SSE. */
 export const STATUS_POLL_INTERVAL_MS = 3000;
+
+/** Agrupa ráfagas de eventos (por ejemplo `processing` y `ready` seguidos) en una sola recarga. */
+export const EVENT_RELOAD_DELAY_MS = 300;

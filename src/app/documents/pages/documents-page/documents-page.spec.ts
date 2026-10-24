@@ -3,7 +3,9 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { API_BASE_URL } from '../../../core/api-base-url';
-import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
+import { EVENT_SOURCE_FACTORY } from '../../../core/event-source-factory';
+import { FakeEventSource, fakeEventSourceFactory } from '../../../core/testing/fake-event-source';
+import { EVENT_RELOAD_DELAY_MS, STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { DocumentDto } from '../../models/document.model';
 import { DocumentsPage } from './documents-page';
 
@@ -33,12 +35,14 @@ describe('DocumentsPage', () => {
   beforeEach(() => {
     // Los temporizadores falsos permiten disparar el intervalo de polling al instante.
     vi.useFakeTimers();
+    FakeEventSource.reset();
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: API_BASE_URL, useValue: 'http://api.test' },
+        { provide: EVENT_SOURCE_FACTORY, useValue: fakeEventSourceFactory },
       ],
     });
     http = TestBed.inject(HttpTestingController);
@@ -103,7 +107,44 @@ describe('DocumentsPage', () => {
     expect(element.textContent).toContain('invoice.pdf');
   });
 
-  describe('polling', () => {
+  describe('status events', () => {
+    it('reloads the list once for a burst of status events', async () => {
+      await respond([pendingDocument]);
+      const events = FakeEventSource.latest();
+      events.open();
+
+      events.emit('document.updated', '{"documentId":"1","status":"processing"}');
+      events.emit('document.updated', '{"documentId":"1","status":"ready"}');
+      await settle(EVENT_RELOAD_DELAY_MS);
+
+      await respond([readyDocument]);
+      expect(element.textContent).toContain('Ready');
+      http.expectNone(LIST_URL);
+    });
+
+    it('does not poll while the event stream is connected', async () => {
+      FakeEventSource.latest().open();
+      await respond([pendingDocument]);
+
+      await waitForPollInterval();
+
+      http.expectNone(LIST_URL);
+    });
+
+    it('reloads after the event stream reconnects', async () => {
+      await respond([readyDocument]);
+      const events = FakeEventSource.latest();
+      events.open();
+      events.fail();
+
+      events.open();
+      await settle(EVENT_RELOAD_DELAY_MS);
+
+      await respond([readyDocument]);
+    });
+  });
+
+  describe('polling while the event stream is down', () => {
     it('refreshes while a document is in progress and keeps the list visible', async () => {
       await respond([pendingDocument]);
 

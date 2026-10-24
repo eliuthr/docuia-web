@@ -1,4 +1,5 @@
 import {
+  afterRenderEffect,
   Component,
   computed,
   DestroyRef,
@@ -13,6 +14,7 @@ import { GENERIC_MESSAGE } from '../../../core/api-error-message';
 import { AnswerEvent, MAX_QUESTION_LENGTH, QuestionTarget } from '../../models/answer-event.model';
 import { QuestionRequestError } from '../../services/question-request.error';
 import { QuestionsApi } from '../../services/questions-api';
+import { stripMarkdownEmphasis } from '../../utils/strip-markdown-emphasis';
 import { toolLabel } from '../../utils/tool-label';
 
 type ExchangeStatus = 'streaming' | 'done' | 'error' | 'stopped';
@@ -32,6 +34,9 @@ const ANNOUNCEMENTS: Record<Exclude<ExchangeStatus, 'streaming'>, string> = {
   error: 'The answer failed.',
   stopped: 'Answer stopped.',
 };
+
+/** Margen para considerar que el usuario sigue "al final" de la conversación. */
+const FOLLOW_THRESHOLD_PX = 48;
 
 let nextPanelId = 0;
 
@@ -65,11 +70,36 @@ export class QuestionPanel {
     () => !this.isStreaming() && this.model().question.trim() !== '' && !this.isTooLong(),
   );
 
+  protected readonly displayAnswer = stripMarkdownEmphasis;
+
+  private readonly conversation = viewChild<ElementRef<HTMLElement>>('conversation');
   private abortController: AbortController | null = null;
   private nextExchangeId = 0;
+  /** true mientras el usuario está al final de la conversación; si sube a leer, no se le mueve. */
+  private isFollowing = true;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.abortController?.abort());
+    this.scrollToLatestAfterRender();
+  }
+
+  protected onConversationScroll(): void {
+    const element = this.conversation()?.nativeElement;
+    if (element) {
+      const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+      this.isFollowing = distanceToBottom <= FOLLOW_THRESHOLD_PX;
+    }
+  }
+
+  /** Tras cada render con contenido nuevo, baja al último mensaje si el usuario lo estaba siguiendo. */
+  private scrollToLatestAfterRender(): void {
+    afterRenderEffect(() => {
+      this.exchanges();
+      const element = this.conversation()?.nativeElement;
+      if (element && this.isFollowing) {
+        element.scrollTop = element.scrollHeight;
+      }
+    });
   }
 
   protected onSubmit(event: Event): void {
@@ -79,6 +109,7 @@ export class QuestionPanel {
     }
     const question = this.model().question.trim();
     this.model.set({ question: '' });
+    this.isFollowing = true;
     this.questionField().nativeElement.focus();
     void this.streamAnswer(question);
   }

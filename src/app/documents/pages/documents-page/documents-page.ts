@@ -6,7 +6,9 @@ import { DocumentList } from '../../components/document-list/document-list';
 import { UploadForm } from '../../components/upload-form/upload-form';
 import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { DocumentDto } from '../../models/document.model';
+import { DocumentEvents } from '../../services/document-events';
 import { DocumentsApi } from '../../services/documents-api';
+import { reloadOnDocumentChanges } from '../../services/reload-on-document-changes';
 import { isInProgress } from '../../utils/document-status';
 import { QuestionPanel } from '../../../questions/components/question-panel/question-panel';
 import { QuestionTarget } from '../../../questions/models/answer-event.model';
@@ -21,12 +23,6 @@ const COLLECTION_TARGET: QuestionTarget = { kind: 'collection' };
       <section class="rounded-lg border border-slate-200 bg-white p-6">
         <app-upload-form (uploaded)="documents.reload()" />
       </section>
-
-      <app-question-panel
-        heading="Ask your documents"
-        placeholder="How much do my invoices add up to?"
-        [target]="collectionTarget"
-      />
 
       <section aria-labelledby="recent-heading" class="space-y-4">
         <h2 id="recent-heading" class="text-lg font-semibold text-slate-900">Recent documents</h2>
@@ -52,11 +48,18 @@ const COLLECTION_TARGET: QuestionTarget = { kind: 'collection' };
           <p class="text-slate-600" role="status">Loading documents…</p>
         }
       </section>
+
+      <app-question-panel
+        heading="Ask your documents"
+        placeholder="How much do my invoices add up to?"
+        [target]="collectionTarget"
+      />
     </div>
   `,
 })
 export class DocumentsPage {
   private readonly api = inject(DocumentsApi);
+  private readonly events = inject(DocumentEvents);
 
   protected readonly documents = httpResource<DocumentDto[]>(() => this.api.recentDocumentsUrl());
 
@@ -64,9 +67,12 @@ export class DocumentsPage {
   protected readonly collectionTarget = COLLECTION_TARGET;
 
   constructor() {
+    reloadOnDocumentChanges(this.documents);
+    // Respaldo: solo se consulta periódicamente mientras la conexión SSE está caída.
     refreshWhile(
       this.documents,
-      (documents) => documents.some((document) => isInProgress(document.status)),
+      (documents) =>
+        !this.events.isConnected() && documents.some((document) => isInProgress(document.status)),
       STATUS_POLL_INTERVAL_MS,
     );
   }
