@@ -1,10 +1,12 @@
 import { httpResource } from '@angular/common/http';
-import { Component, inject } from '@angular/core';
+import { Component, effect, inject } from '@angular/core';
 import { apiErrorMessage } from '../../../core/api-error-message';
-import { DocumentDto } from '../../models/document.model';
 import { DocumentList } from '../../components/document-list/document-list';
-import { DocumentsApi } from '../../services/documents-api';
 import { UploadForm } from '../../components/upload-form/upload-form';
+import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
+import { DocumentDto } from '../../models/document.model';
+import { DocumentsApi } from '../../services/documents-api';
+import { isInProgress } from '../../utils/document-status';
 
 @Component({
   selector: 'app-documents-page',
@@ -48,4 +50,23 @@ export class DocumentsPage {
   protected readonly documents = httpResource<DocumentDto[]>(() => this.api.recentDocumentsUrl());
 
   protected readonly errorMessage = apiErrorMessage;
+
+  constructor() {
+    this.refreshWhileInProgress();
+  }
+
+  /**
+   * Cada respuesta es un arreglo nuevo, así que este effect se vuelve a ejecutar
+   * tras cada refresco y programa el siguiente solo mientras haya documentos en proceso.
+   */
+  private refreshWhileInProgress(): void {
+    effect((onCleanup) => {
+      const documents = this.documents.hasValue() ? this.documents.value() : [];
+      if (!documents.some((document) => isInProgress(document.status))) {
+        return;
+      }
+      const timer = setTimeout(() => this.documents.reload(), STATUS_POLL_INTERVAL_MS);
+      onCleanup(() => clearTimeout(timer));
+    });
+  }
 }

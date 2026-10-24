@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 const UNREACHABLE_MESSAGE = 'Cannot reach the server. Check your connection and try again.';
 const GENERIC_MESSAGE = 'Something went wrong. Please try again.';
 
-/** Turns an HTTP failure into a message that can be shown to the user. */
+/** Convierte un fallo HTTP en un mensaje que se puede mostrar al usuario. */
 export function apiErrorMessage(error: unknown): string {
   if (!(error instanceof HttpErrorResponse)) {
     return GENERIC_MESSAGE;

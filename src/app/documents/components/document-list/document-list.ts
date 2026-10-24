@@ -17,6 +17,7 @@ import { StatusBadge } from '../status-badge/status-badge';
           <tr>
             <th scope="col" class="px-4 py-3 font-semibold">Name</th>
             <th scope="col" class="px-4 py-3 font-semibold">Size</th>
+            <th scope="col" class="px-4 py-3 font-semibold">Pages</th>
             <th scope="col" class="px-4 py-3 font-semibold">Status</th>
             <th scope="col" class="px-4 py-3 font-semibold">Uploaded</th>
           </tr>
@@ -28,7 +29,19 @@ import { StatusBadge } from '../status-badge/status-badge';
                 {{ document.originalName }}
               </td>
               <td class="whitespace-nowrap px-4 py-3">{{ formatFileSize(document.sizeBytes) }}</td>
-              <td class="px-4 py-3"><app-status-badge [status]="document.status" /></td>
+              <td class="px-4 py-3">
+                @if (document.pageCount !== null) {
+                  {{ document.pageCount }}
+                } @else {
+                  <span aria-label="Unknown">—</span>
+                }
+              </td>
+              <td class="px-4 py-3">
+                <app-status-badge [status]="document.status" />
+                @if (document.failureReason) {
+                  <p class="mt-1 max-w-64 text-xs text-red-800">{{ document.failureReason }}</p>
+                }
+              </td>
               <td class="whitespace-nowrap px-4 py-3">{{ document.createdAt | date: 'medium' }}</td>
             </tr>
           }

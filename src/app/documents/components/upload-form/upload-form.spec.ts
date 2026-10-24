@@ -11,6 +11,8 @@ const uploadedDocument: DocumentDto = {
   mimeType: 'application/pdf',
   sizeBytes: 4,
   status: 'pending',
+  pageCount: null,
+  failureReason: null,
   createdAt: '2026-10-22T18:00:00.000Z',
   updatedAt: '2026-10-22T18:00:00.000Z',
 };
