@@ -1,0 +1,62 @@
+<form class="space-y-4" aria-labelledby="upload-heading" (submit)="onSubmit($event)">
+  <h2 id="upload-heading" class="text-lg font-semibold text-slate-900">Upload a document</h2>
+
+  <label
+    for="document-file"
+    class="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed px-4 py-8 text-center has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-blue-700 has-[input:focus-visible]:ring-offset-2"
+    [class.border-blue-700]="isDragging()"
+    [class.bg-blue-50]="isDragging()"
+    [class.border-slate-300]="!isDragging()"
+    [class.bg-white]="!isDragging()"
+    (dragover)="onDragOver($event)"
+    (dragleave)="isDragging.set(false)"
+    (drop)="onDrop($event)"
+  >
+    <span class="font-medium text-slate-900">Choose a file or drag it here</span>
+    <span id="file-hint" class="text-sm text-slate-600">
+      PDF, PNG or JPEG, up to {{ maxSizeMb }} MB
+    </span>
+    <input
+      #fileInput
+      id="document-file"
+      type="file"
+      class="sr-only"
+      aria-describedby="file-hint file-error"
+      [accept]="accept"
+      [disabled]="isUploading()"
+      (change)="onFileInputChange($event)"
+    />
+  </label>
+
+  @if (selectedFile(); as file) {
+    <p class="text-sm text-slate-700">
+      Selected: <span class="font-medium">{{ file.name }}</span> ({{ formatFileSize(file.size) }})
+    </p>
+  }
+
+  <p id="file-error" class="text-sm font-medium text-red-800" role="alert">
+    {{ validationError() }}
+  </p>
+
+  <button
+    type="submit"
+    class="rounded-md bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+    [disabled]="!canUpload()"
+  >
+    {{ isUploading() ? 'Uploading…' : 'Upload' }}
+  </button>
+
+  <div aria-live="polite">
+    @if (feedback(); as message) {
+      <p
+        class="rounded-md px-3 py-2 text-sm font-medium"
+        [class.bg-green-100]="message.kind === 'success'"
+        [class.text-green-900]="message.kind === 'success'"
+        [class.bg-red-100]="message.kind === 'error'"
+        [class.text-red-900]="message.kind === 'error'"
+      >
+        {{ message.text }}
+      </p>
+    }
+  </div>
+</form>
