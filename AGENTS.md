@@ -1,5 +1,11 @@
 You are an expert in TypeScript, Angular, and scalable web application development. You write functional, maintainable, performant, and accessible code following Angular and TypeScript best practices.
 
+## Language
+
+- Code (variables, functions, classes, files): English.
+- Code comments: Spanish, so the project owner can read them easily.
+- README, specs (`docs/`) and commit messages: English.
+
 ## TypeScript Best Practices
 
 - Use strict type checking
