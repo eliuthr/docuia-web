@@ -1,0 +1,67 @@
+<div class="space-y-10">
+  <section class="rounded-lg border border-slate-200 bg-white p-6">
+    <app-upload-form (uploaded)="showUploaded($event)" />
+  </section>
+
+  <section aria-labelledby="recent-heading" class="space-y-4">
+    <h2 id="recent-heading" class="text-lg font-semibold text-slate-900">Recent documents</h2>
+
+    @if (documents.error(); as error) {
+      <div class="flex items-center gap-4 rounded-md bg-red-100 px-4 py-3 text-red-900">
+        <p>{{ errorMessage(error) }}</p>
+        <button
+          type="button"
+          class="rounded-md border border-red-900 px-3 py-1 text-sm font-semibold hover:bg-red-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-900"
+          (click)="documents.reload()"
+        >
+          Retry
+        </button>
+      </div>
+    } @else if (documents.hasValue()) {
+      @let page = documents.value();
+      @if (page.items.length === 0) {
+        <p class="text-slate-600">
+          @if (pager.isFirstPage()) {
+            No documents yet. Upload your first one above.
+          } @else {
+            No more documents.
+          }
+        </p>
+      } @else {
+        <app-document-list [documents]="page.items" />
+      }
+
+      @if (!pager.isFirstPage() || page.nextCursor) {
+        <nav aria-label="Documents pages" class="flex items-center justify-between gap-4">
+          <button
+            type="button"
+            class="rounded-md border border-slate-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+            [disabled]="pager.isFirstPage()"
+            (click)="pager.previous()"
+          >
+            ← Previous
+          </button>
+          <span class="text-sm text-slate-600" aria-live="polite">
+            Page {{ pager.pageNumber() }}
+          </span>
+          <button
+            type="button"
+            class="rounded-md border border-slate-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+            [disabled]="!page.nextCursor"
+            (click)="goToNextPage(page.nextCursor)"
+          >
+            Next →
+          </button>
+        </nav>
+      }
+    } @else {
+      <p class="text-slate-600" role="status">Loading documents…</p>
+    }
+  </section>
+
+  <app-question-panel
+    heading="Ask your documents"
+    placeholder="How much do my invoices add up to?"
+    [target]="collectionTarget"
+  />
+</div>

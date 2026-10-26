@@ -10,7 +10,7 @@ import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { DocumentDto } from '../../models/document.model';
 import { DocumentEvents } from '../../services/document-events';
 import { DocumentsApi } from '../../services/documents-api';
-import { reloadOnDocumentChanges } from '../../services/reload-on-document-changes';
+import { syncDocumentWithChanges } from '../../services/sync-document-with-changes';
 import { isInProgress } from '../../utils/document-status';
 import { documentTypeLabel } from '../../utils/document-type-label';
 import { pageCountLabel } from '../../utils/page-count-label';
@@ -117,10 +117,7 @@ export class DocumentDetailPage {
   }));
 
   constructor() {
-    reloadOnDocumentChanges(
-      this.document,
-      (change) => change.kind === 'status' && change.documentId === this.id(),
-    );
+    syncDocumentWithChanges(this.document, () => this.id());
     // Respaldo: solo se consulta periódicamente mientras la conexión SSE está caída.
     refreshWhile(
       this.document,

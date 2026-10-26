@@ -5,7 +5,7 @@ import { provideRouter } from '@angular/router';
 import { API_BASE_URL } from '../../../core/api-base-url';
 import { EVENT_SOURCE_FACTORY } from '../../../core/event-source-factory';
 import { FakeEventSource, fakeEventSourceFactory } from '../../../core/testing/fake-event-source';
-import { EVENT_RELOAD_DELAY_MS, STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
+import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { buildDocument } from '../../testing/build-document';
 import { DocumentDetailPage } from './document-detail-page';
 
@@ -93,17 +93,22 @@ describe('DocumentDetailPage', () => {
     expect(element.textContent).not.toContain('Ask about this document');
   });
 
-  it('reloads when an event about this document arrives, not for other documents', async () => {
-    await respond(buildDocument({ status: 'processing' }));
+  it('updates the label on processing and reloads only when this document finishes', async () => {
+    await respond(buildDocument({ status: 'pending' }));
     const events = FakeEventSource.latest();
     events.open();
 
+    events.emit('document.updated', `{"documentId":"${DOCUMENT_ID}","status":"processing"}`);
+    await settle();
+    expect(element.textContent).toContain('Processing');
+    http.expectNone(DOCUMENT_URL);
+
     events.emit('document.updated', '{"documentId":"another-id","status":"ready"}');
-    await settle(EVENT_RELOAD_DELAY_MS);
+    await settle();
     http.expectNone(DOCUMENT_URL);
 
     events.emit('document.updated', `{"documentId":"${DOCUMENT_ID}","status":"ready"}`);
-    await settle(EVENT_RELOAD_DELAY_MS);
+    await settle();
     await respond(buildDocument());
     expect(element.textContent).toContain('Ready');
   });

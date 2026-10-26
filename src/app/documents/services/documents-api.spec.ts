@@ -38,7 +38,20 @@ describe('DocumentsApi', () => {
     expect(uploaded?.status).toBe('pending');
   });
 
-  it('builds the recent documents URL with the default limit', () => {
-    expect(api.recentDocumentsUrl()).toBe(`${BASE_URL}/documents?limit=20`);
+  it('builds the first page URL with the default page size', () => {
+    expect(api.documentsPageUrl(null)).toBe(`${BASE_URL}/documents?limit=10`);
+  });
+
+  it('adds the cursor for the following pages', () => {
+    expect(api.documentsPageUrl('abc_-1')).toBe(`${BASE_URL}/documents?limit=10&cursor=abc_-1`);
+  });
+
+  it('gets one document', () => {
+    let received: DocumentDto | undefined;
+
+    api.getDocument('doc-1').subscribe((document) => (received = document));
+
+    http.expectOne(`${BASE_URL}/documents/doc-1`).flush({ id: 'doc-1', status: 'ready' });
+    expect(received?.id).toBe('doc-1');
   });
 });

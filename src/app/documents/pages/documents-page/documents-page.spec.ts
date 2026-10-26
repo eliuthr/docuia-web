@@ -1,31 +1,35 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { API_BASE_URL } from '../../../core/api-base-url';
 import { EVENT_SOURCE_FACTORY } from '../../../core/event-source-factory';
 import { FakeEventSource, fakeEventSourceFactory } from '../../../core/testing/fake-event-source';
-import { EVENT_RELOAD_DELAY_MS, STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
-import { DocumentDto } from '../../models/document.model';
+import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
+import { DocumentDto, DocumentPageDto } from '../../models/document.model';
+import { buildDocument } from '../../testing/build-document';
+import { UploadForm } from '../../components/upload-form/upload-form';
 import { DocumentsPage } from './documents-page';
 
-const LIST_URL = 'http://api.test/documents?limit=20';
+const FIRST_PAGE_URL = 'http://api.test/documents?limit=10';
+const SECOND_PAGE_URL = 'http://api.test/documents?limit=10&cursor=cursor-2';
+const DOCUMENT_URL = 'http://api.test/documents/1';
 
-const pendingDocument: DocumentDto = {
+const pendingDocument = buildDocument({
   id: '1',
   originalName: 'invoice.pdf',
-  mimeType: 'application/pdf',
-  sizeBytes: 4,
   status: 'pending',
   pageCount: null,
-  failureReason: null,
   documentType: null,
   summary: null,
   extractedData: null,
-  createdAt: '2026-10-22T18:00:00.000Z',
-  updatedAt: '2026-10-22T18:00:00.000Z',
-};
+});
 const readyDocument: DocumentDto = { ...pendingDocument, status: 'ready', pageCount: 2 };
+
+function pageOf(items: DocumentDto[], nextCursor: string | null = null): DocumentPageDto {
+  return { items, nextCursor };
+}
 
 describe('DocumentsPage', () => {
   let fixture: ComponentFixture<DocumentsPage>;
@@ -63,8 +67,12 @@ describe('DocumentsPage', () => {
     TestBed.tick();
   }
 
-  async function respond(body: object, init?: { status: number; statusText: string }) {
-    http.expectOne(LIST_URL).flush(body, init);
+  async function respond(
+    body: object,
+    url = FIRST_PAGE_URL,
+    init?: { status: number; statusText: string },
+  ): Promise<void> {
+    http.expectOne(url).flush(body, init);
     await settle();
   }
 
@@ -72,116 +80,211 @@ describe('DocumentsPage', () => {
     return settle(STATUS_POLL_INTERVAL_MS);
   }
 
+  function button(label: string): HTMLButtonElement {
+    const found = [...element.querySelectorAll('button')].find((candidate) =>
+      candidate.textContent?.includes(label),
+    );
+    if (!found) {
+      throw new Error(`Button "${label}" not found`);
+    }
+    return found;
+  }
+
   it('shows a loading message while the list is requested', () => {
     expect(element.textContent).toContain('Loading documents');
-    http.expectOne(LIST_URL);
+    http.expectOne(FIRST_PAGE_URL);
   });
 
-  it('lists the documents returned by the API', async () => {
-    await respond([readyDocument]);
+  it('lists the documents of the first page', async () => {
+    await respond(pageOf([readyDocument]));
 
     expect(element.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(element.textContent).toContain('invoice.pdf');
   });
 
   it('shows an empty state when there are no documents', async () => {
-    await respond([]);
+    await respond(pageOf([]));
 
     expect(element.textContent).toContain('No documents yet');
+    expect(element.querySelector('nav')).toBeNull();
   });
 
   it('shows the error and retries on demand', async () => {
-    await respond(
-      { message: 'Internal server error' },
-      { status: 500, statusText: 'Server Error' },
-    );
+    await respond({ message: 'Internal server error' }, FIRST_PAGE_URL, {
+      status: 500,
+      statusText: 'Server Error',
+    });
     expect(element.textContent).toContain('Internal server error');
 
-    const retry = [...element.querySelectorAll('button')].find(
-      (button) => button.textContent?.trim() === 'Retry',
-    );
-    retry!.click();
+    button('Retry').click();
     await settle();
 
-    await respond([readyDocument]);
+    await respond(pageOf([readyDocument]));
     expect(element.textContent).toContain('invoice.pdf');
   });
 
-  describe('status events', () => {
-    it('reloads the list once for a burst of status events', async () => {
-      await respond([pendingDocument]);
-      const events = FakeEventSource.latest();
-      events.open();
+  describe('after an upload', () => {
+    const uploadedDocument = buildDocument({ id: 'new', originalName: 'new.pdf', status: 'pending' });
 
-      events.emit('document.updated', '{"documentId":"1","status":"processing"}');
-      events.emit('document.updated', '{"documentId":"1","status":"ready"}');
-      await settle(EVENT_RELOAD_DELAY_MS);
+    function emitUploaded(): void {
+      fixture.debugElement
+        .query(By.directive(UploadForm))
+        .componentInstance.uploaded.emit(uploadedDocument);
+      TestBed.tick();
+    }
 
-      await respond([readyDocument]);
-      expect(element.textContent).toContain('Ready');
-      http.expectNone(LIST_URL);
+    it('adds the uploaded document to the first page without requesting the list', async () => {
+      await respond(pageOf([readyDocument]));
+
+      emitUploaded();
+
+      const rows = element.querySelectorAll('tbody tr');
+      expect(rows).toHaveLength(2);
+      expect(rows[0].textContent).toContain('new.pdf');
+      http.expectNone(FIRST_PAGE_URL);
     });
 
-    it('does not poll while the event stream is connected', async () => {
+    it('goes back to the first page when another page is shown', async () => {
+      await respond(pageOf([readyDocument], 'cursor-2'));
+      button('Next').click();
+      await settle();
+      await respond(pageOf([buildDocument({ id: '2' })]), SECOND_PAGE_URL);
+
+      emitUploaded();
+      await settle();
+
+      await respond(pageOf([uploadedDocument, readyDocument]));
+      expect(element.querySelectorAll('tbody tr')[0].textContent).toContain('new.pdf');
+    });
+  });
+
+  describe('pagination', () => {
+    it('moves to the next page with its cursor and back to the first one', async () => {
+      await respond(pageOf([readyDocument], 'cursor-2'));
+      expect(button('Previous').disabled).toBe(true);
+      expect(element.textContent).toContain('Page 1');
+
+      button('Next').click();
+      await settle();
+      await respond(
+        pageOf([buildDocument({ id: '2', originalName: 'older.pdf' })]),
+        SECOND_PAGE_URL,
+      );
+      expect(element.textContent).toContain('older.pdf');
+      expect(element.textContent).toContain('Page 2');
+      expect(button('Next').disabled).toBe(true);
+
+      button('Previous').click();
+      await settle();
+      await respond(pageOf([readyDocument], 'cursor-2'));
+      expect(element.textContent).toContain('invoice.pdf');
+    });
+
+    it('hides the page controls when everything fits in one page', async () => {
+      await respond(pageOf([readyDocument]));
+
+      expect(element.querySelector('nav')).toBeNull();
+    });
+  });
+
+  describe('status events', () => {
+    beforeEach(async () => {
+      await respond(pageOf([pendingDocument]));
       FakeEventSource.latest().open();
-      await respond([pendingDocument]);
+    });
 
-      await waitForPollInterval();
+    it('updates the label of a processing document without any request', async () => {
+      FakeEventSource.latest().emit('document.updated', '{"documentId":"1","status":"processing"}');
+      await settle();
 
-      http.expectNone(LIST_URL);
+      expect(element.textContent).toContain('Processing');
+      http.expectNone(FIRST_PAGE_URL);
+      http.expectNone(DOCUMENT_URL);
+    });
+
+    it('fetches only the finished document and replaces its row', async () => {
+      FakeEventSource.latest().emit('document.updated', '{"documentId":"1","status":"ready"}');
+      await settle();
+
+      await respond(readyDocument, DOCUMENT_URL);
+      expect(element.textContent).toContain('Ready');
+      expect(
+        element.querySelectorAll<HTMLTableRowElement>('tbody tr')[0].cells[2].textContent?.trim(),
+      ).toBe('2');
+      http.expectNone(FIRST_PAGE_URL);
+    });
+
+    it('reloads the first page for a new document that is not listed', async () => {
+      FakeEventSource.latest().emit(
+        'document.updated',
+        '{"documentId":"uploaded-elsewhere","status":"processing"}',
+      );
+      await settle();
+
+      await respond(pageOf([readyDocument]));
     });
 
     it('reloads after the event stream reconnects', async () => {
-      await respond([readyDocument]);
       const events = FakeEventSource.latest();
-      events.open();
       events.fail();
 
       events.open();
-      await settle(EVENT_RELOAD_DELAY_MS);
+      await settle();
 
-      await respond([readyDocument]);
+      await respond(pageOf([pendingDocument]));
     });
+
+    it('does not poll while the event stream is connected', async () => {
+      await waitForPollInterval();
+
+      http.expectNone(FIRST_PAGE_URL);
+    });
+  });
+
+  it('ignores events for documents of other pages', async () => {
+    await respond(pageOf([readyDocument], 'cursor-2'));
+    button('Next').click();
+    await settle();
+    await respond(pageOf([buildDocument({ id: '2' })]), SECOND_PAGE_URL);
+    FakeEventSource.latest().open();
+
+    FakeEventSource.latest().emit('document.updated', '{"documentId":"new","status":"ready"}');
+    await settle();
+
+    http.expectNone(SECOND_PAGE_URL);
+    http.expectNone(FIRST_PAGE_URL);
   });
 
   describe('polling while the event stream is down', () => {
     it('refreshes while a document is in progress and keeps the list visible', async () => {
-      await respond([pendingDocument]);
+      await respond(pageOf([pendingDocument]));
 
       await waitForPollInterval();
 
       expect(element.textContent).not.toContain('Loading documents');
-      await respond([readyDocument]);
+      await respond(pageOf([readyDocument]));
       expect(element.textContent).toContain('Ready');
     });
 
     it('stops refreshing once every document is finished', async () => {
-      await respond([pendingDocument]);
+      await respond(pageOf([pendingDocument]));
       await waitForPollInterval();
-      await respond([readyDocument]);
-
-      await waitForPollInterval();
-
-      http.expectNone(LIST_URL);
-    });
-
-    it('does not refresh when nothing is in progress', async () => {
-      await respond([readyDocument]);
+      await respond(pageOf([readyDocument]));
 
       await waitForPollInterval();
 
-      http.expectNone(LIST_URL);
+      http.expectNone(FIRST_PAGE_URL);
     });
 
     it('does not refresh after a failed request', async () => {
-      await respond(
-        { message: 'Internal server error' },
-        { status: 500, statusText: 'Server Error' },
-      );
+      await respond({ message: 'Internal server error' }, FIRST_PAGE_URL, {
+        status: 500,
+        statusText: 'Server Error',
+      });
 
       await waitForPollInterval();
 
-      http.expectNone(LIST_URL);
+      http.expectNone(FIRST_PAGE_URL);
     });
   });
 });

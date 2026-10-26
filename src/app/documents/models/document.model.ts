@@ -19,3 +19,10 @@ export interface DocumentDto {
   createdAt: string;
   updatedAt: string;
 }
+
+/** Una página de la lista (paginación por cursor, ver la spec 004c de la API). */
+export interface DocumentPageDto {
+  items: DocumentDto[];
+  /** Cursor opaco para pedir la página siguiente; null en la última. */
+  nextCursor: string | null;
+}

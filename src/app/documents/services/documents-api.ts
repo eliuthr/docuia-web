@@ -3,7 +3,7 @@ import { inject, Service } from '@angular/core';
 import { Observable } from 'rxjs';
 import { API_BASE_URL } from '../../core/api-base-url';
 import { DocumentDto } from '../models/document.model';
-import { RECENT_DOCUMENTS_LIMIT } from '../documents.constants';
+import { DOCUMENTS_PAGE_SIZE } from '../documents.constants';
 
 const UPLOAD_FIELD_NAME = 'file';
 
@@ -18,8 +18,17 @@ export class DocumentsApi {
     return this.http.post<DocumentDto>(this.documentsUrl, body);
   }
 
-  recentDocumentsUrl(limit = RECENT_DOCUMENTS_LIMIT): string {
-    return `${this.documentsUrl}?limit=${limit}`;
+  getDocument(id: string): Observable<DocumentDto> {
+    return this.http.get<DocumentDto>(this.documentUrl(id));
+  }
+
+  /** URL de una página de la lista; `cursor` es el `nextCursor` de la página anterior. */
+  documentsPageUrl(cursor: string | null, limit = DOCUMENTS_PAGE_SIZE): string {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (cursor) {
+      params.set('cursor', cursor);
+    }
+    return `${this.documentsUrl}?${params.toString()}`;
   }
 
   documentUrl(id: string): string {
