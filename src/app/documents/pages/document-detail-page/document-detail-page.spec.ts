@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { API_BASE_URL } from '../../../core/api-base-url';
+import { flushConversationLists } from '../../../questions/testing/flush-conversation-lists';
 import { EVENT_SOURCE_FACTORY } from '../../../core/event-source-factory';
 import { FakeEventSource, fakeEventSourceFactory } from '../../../core/testing/fake-event-source';
 import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
@@ -37,6 +38,7 @@ describe('DocumentDetailPage', () => {
   });
 
   afterEach(() => {
+    flushConversationLists(http);
     http.verify();
     vi.useRealTimers();
   });

@@ -6,16 +6,22 @@ import {
   ElementRef,
   inject,
   input,
+  linkedSignal,
   signal,
   viewChild,
 } from '@angular/core';
 import { form, FormField, maxLength, required } from '@angular/forms/signals';
-import { GENERIC_MESSAGE } from '../../../core/api-error-message';
+import { firstValueFrom } from 'rxjs';
+import { apiErrorMessage, GENERIC_MESSAGE } from '../../../core/api-error-message';
 import { AnswerEvent, MAX_QUESTION_LENGTH, QuestionTarget } from '../../models/answer-event.model';
+import { ConversationsApi } from '../../services/conversations-api';
 import { QuestionRequestError } from '../../services/question-request.error';
 import { QuestionsApi } from '../../services/questions-api';
+import { agentStepLabel } from '../../utils/agent-step-label';
+import { exchangesFromMessages, StoredExchange } from '../../utils/exchanges-from-messages';
 import { stripMarkdownEmphasis } from '../../utils/strip-markdown-emphasis';
 import { toolLabel } from '../../utils/tool-label';
+import { ConversationHistory } from '../conversation-history/conversation-history';
 
 type ExchangeStatus = 'streaming' | 'done' | 'error' | 'stopped';
 
@@ -24,7 +30,8 @@ interface Exchange {
   id: number;
   question: string;
   answer: string;
-  activeTool: string | null;
+  /** Qué está haciendo el agente (un paso o una herramienta) hasta que llega el texto. */
+  progress: string | null;
   status: ExchangeStatus;
   error: string | null;
 }
@@ -42,7 +49,7 @@ let nextPanelId = 0;
 
 @Component({
   selector: 'app-question-panel',
-  imports: [FormField],
+  imports: [FormField, ConversationHistory],
   templateUrl: './question-panel.html',
 })
 export class QuestionPanel {
@@ -51,7 +58,9 @@ export class QuestionPanel {
   readonly placeholder = input('');
 
   private readonly api = inject(QuestionsApi);
+  private readonly conversationsApi = inject(ConversationsApi);
   private readonly questionField = viewChild.required<ElementRef<HTMLTextAreaElement>>('field');
+  private readonly history = viewChild(ConversationHistory);
 
   protected readonly panelId = `question-panel-${nextPanelId++}`;
   protected readonly maxLength = MAX_QUESTION_LENGTH;
@@ -61,13 +70,25 @@ export class QuestionPanel {
     maxLength(path.question, MAX_QUESTION_LENGTH);
   });
 
-  protected readonly exchanges = signal<Exchange[]>([]);
+  // Si cambia el documento, la conversación vuelve a empezar.
+  protected readonly exchanges = linkedSignal<QuestionTarget, Exchange[]>({
+    source: this.target,
+    computation: () => [],
+  });
+  /** Id de la conversación abierta; llega en el primer evento del stream. */
+  protected readonly conversationId = linkedSignal<QuestionTarget, string | null>({
+    source: this.target,
+    computation: () => null,
+  });
+  protected readonly isLoadingConversation = signal(false);
+  protected readonly conversationError = signal<string | null>(null);
   /** Lo anuncia el lector de pantalla al terminar, en vez de leer cada trozo del stream. */
   protected readonly announcement = signal('');
   protected readonly isStreaming = computed(() => this.exchanges().at(-1)?.status === 'streaming');
+  protected readonly isBusy = computed(() => this.isStreaming() || this.isLoadingConversation());
   protected readonly isTooLong = computed(() => this.model().question.length > MAX_QUESTION_LENGTH);
   protected readonly canSend = computed(
-    () => !this.isStreaming() && this.model().question.trim() !== '' && !this.isTooLong(),
+    () => !this.isBusy() && this.model().question.trim() !== '' && !this.isTooLong(),
   );
 
   protected readonly displayAnswer = stripMarkdownEmphasis;
@@ -126,15 +147,47 @@ export class QuestionPanel {
     this.abortController?.abort();
   }
 
+  protected startNewConversation(): void {
+    this.exchanges.set([]);
+    this.conversationId.set(null);
+    this.conversationError.set(null);
+    this.announcement.set('New conversation started.');
+    this.questionField().nativeElement.focus();
+  }
+
+  /** Muestra una conversación guardada y la deja lista para seguirla. */
+  protected async openConversation(id: string): Promise<void> {
+    this.isLoadingConversation.set(true);
+    this.conversationError.set(null);
+    try {
+      const conversation = await firstValueFrom(this.conversationsApi.getConversation(id));
+      const stored = exchangesFromMessages(conversation.messages);
+      this.exchanges.set(stored.map((exchange) => this.toFinishedExchange(exchange)));
+      this.conversationId.set(conversation.id);
+      this.isFollowing = true;
+      this.announcement.set('Conversation loaded.');
+    } catch (error) {
+      this.conversationError.set(apiErrorMessage(error));
+    } finally {
+      this.isLoadingConversation.set(false);
+    }
+  }
+
+  private toFinishedExchange(stored: StoredExchange): Exchange {
+    return { id: this.nextExchangeId++, ...stored, progress: null, status: 'done', error: null };
+  }
+
   private async streamAnswer(question: string): Promise<void> {
     const controller = new AbortController();
     this.abortController = controller;
     this.startExchange(question);
     try {
-      for await (const event of this.api.ask(this.target(), question, controller.signal)) {
+      const request = { question, conversationId: this.conversationId() };
+      for await (const event of this.api.ask(this.target(), request, controller.signal)) {
         this.apply(event);
       }
       this.finishIfStreaming('done');
+      this.reloadHistoryIfAnswered();
     } catch (error) {
       this.handleFailure(error, controller.signal);
     } finally {
@@ -147,21 +200,28 @@ export class QuestionPanel {
       id: this.nextExchangeId++,
       question,
       answer: '',
-      activeTool: null,
+      progress: null,
       status: 'streaming',
       error: null,
     };
     this.exchanges.update((exchanges) => [...exchanges, exchange]);
+    this.conversationError.set(null);
     this.announcement.set('');
   }
 
   private apply(event: AnswerEvent): void {
     switch (event.type) {
+      case 'conversation':
+        this.conversationId.set(event.id);
+        return;
+      case 'status':
+        this.updateLast(() => ({ progress: agentStepLabel(event.step) }));
+        return;
       case 'tool':
-        this.updateLast(() => ({ activeTool: toolLabel(event.name) }));
+        this.updateLast(() => ({ progress: toolLabel(event.name) }));
         return;
       case 'delta':
-        this.updateLast((exchange) => ({ answer: exchange.answer + event.text, activeTool: null }));
+        this.updateLast((exchange) => ({ answer: exchange.answer + event.text, progress: null }));
         return;
       case 'done':
         this.finishIfStreaming('done');
@@ -169,6 +229,13 @@ export class QuestionPanel {
       case 'error':
         this.finish('error', event.message);
         return;
+    }
+  }
+
+  /** Una respuesta completa crea la conversación en la lista o la sube al primer lugar. */
+  private reloadHistoryIfAnswered(): void {
+    if (this.exchanges().at(-1)?.status === 'done') {
+      this.history()?.reload();
     }
   }
 
@@ -187,7 +254,7 @@ export class QuestionPanel {
   }
 
   private finish(status: Exclude<ExchangeStatus, 'streaming'>, error: string | null = null): void {
-    this.updateLast(() => ({ status, error, activeTool: null }));
+    this.updateLast(() => ({ status, error, progress: null }));
     this.announcement.set(error ?? ANNOUNCEMENTS[status]);
   }
 

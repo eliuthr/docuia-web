@@ -6,6 +6,7 @@ import { provideRouter } from '@angular/router';
 import { API_BASE_URL } from '../../../core/api-base-url';
 import { EVENT_SOURCE_FACTORY } from '../../../core/event-source-factory';
 import { FakeEventSource, fakeEventSourceFactory } from '../../../core/testing/fake-event-source';
+import { flushConversationLists } from '../../../questions/testing/flush-conversation-lists';
 import { STATUS_POLL_INTERVAL_MS } from '../../documents.constants';
 import { DocumentDto, DocumentPageDto } from '../../models/document.model';
 import { buildDocument } from '../../testing/build-document';
@@ -57,6 +58,7 @@ describe('DocumentsPage', () => {
   });
 
   afterEach(() => {
+    flushConversationLists(http);
     http.verify();
     vi.useRealTimers();
   });

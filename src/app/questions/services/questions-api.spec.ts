@@ -33,9 +33,13 @@ describe('QuestionsApi', () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  async function collect(target: QuestionTarget = COLLECTION): Promise<AnswerEvent[]> {
+  async function collect(
+    target: QuestionTarget = COLLECTION,
+    conversationId: string | null = null,
+  ): Promise<AnswerEvent[]> {
     const events: AnswerEvent[] = [];
-    for await (const event of api.ask(target, '¿Cuánto suman?', signal)) {
+    const request = { question: '¿Cuánto suman?', conversationId };
+    for await (const event of api.ask(target, request, signal)) {
       events.push(event);
     }
     return events;
@@ -60,6 +64,32 @@ describe('QuestionsApi', () => {
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ question: '¿Cuánto suman?' }));
     expect(init.signal).toBe(signal);
+  });
+
+  it('sends the conversation id to continue a conversation', async () => {
+    fetchMock.mockResolvedValue(sseResponse('event: done\ndata: {}\n\n'));
+
+    await collect(COLLECTION, 'conv-1');
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(
+      JSON.stringify({ question: '¿Cuánto suman?', conversationId: 'conv-1' }),
+    );
+  });
+
+  it('yields the conversation id and the agent steps', async () => {
+    fetchMock.mockResolvedValue(
+      sseResponse(
+        'event: conversation\ndata: {"id":"conv-1"}\n\n' +
+          'event: status\ndata: {"step":"verifying"}\n\n' +
+          'event: status\ndata: {"step":"dreaming"}\n\n',
+      ),
+    );
+
+    await expect(collect()).resolves.toEqual([
+      { type: 'conversation', id: 'conv-1' },
+      { type: 'status', step: 'verifying' },
+    ]);
   });
 
   it('asks about one document on its own endpoint', async () => {
@@ -116,7 +146,11 @@ describe('QuestionsApi', () => {
     const abortError = new DOMException('Aborted', 'AbortError');
     fetchMock.mockRejectedValue(abortError);
 
-    const events = api.ask(COLLECTION, 'Hola', controller.signal);
+    const events = api.ask(
+      COLLECTION,
+      { question: 'Hola', conversationId: null },
+      controller.signal,
+    );
 
     await expect(events.next()).rejects.toBe(abortError);
   });

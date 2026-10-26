@@ -5,9 +5,15 @@ import {
   messageFromBody,
   UNREACHABLE_MESSAGE,
 } from '../../core/api-error-message';
-import { AnswerEvent, QuestionTarget } from '../models/answer-event.model';
+import { AGENT_STEPS, AgentStep, AnswerEvent, QuestionTarget } from '../models/answer-event.model';
 import { readSseEvents } from '../utils/read-sse-events';
 import { QuestionRequestError } from './question-request.error';
+
+export interface QuestionRequest {
+  question: string;
+  /** Conversación que se continúa; null para empezar una nueva. */
+  conversationId: string | null;
+}
 
 /**
  * Envía preguntas a la API y devuelve la respuesta a medida que llega. Usa
@@ -20,10 +26,10 @@ export class QuestionsApi {
 
   async *ask(
     target: QuestionTarget,
-    question: string,
+    request: QuestionRequest,
     signal: AbortSignal,
   ): AsyncGenerator<AnswerEvent> {
-    const response = await this.post(this.urlFor(target), question, signal);
+    const response = await this.post(this.urlFor(target), request, signal);
     if (!response.ok) {
       throw new QuestionRequestError(await errorMessageOf(response));
     }
@@ -44,12 +50,16 @@ export class QuestionsApi {
       : `${this.baseUrl}/documents/${encodeURIComponent(target.documentId)}/ask`;
   }
 
-  private async post(url: string, question: string, signal: AbortSignal): Promise<Response> {
+  private async post(
+    url: string,
+    request: QuestionRequest,
+    signal: AbortSignal,
+  ): Promise<Response> {
     try {
       return await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify(toRequestBody(request)),
         signal,
       });
     } catch (error) {
@@ -62,6 +72,11 @@ export class QuestionsApi {
   }
 }
 
+/** Sin conversación no se envía el campo, en vez de mandarlo como null. */
+function toRequestBody({ question, conversationId }: QuestionRequest): object {
+  return conversationId ? { question, conversationId } : { question };
+}
+
 async function errorMessageOf(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => null);
   return messageFromBody(body) ?? GENERIC_MESSAGE;
@@ -71,6 +86,10 @@ async function errorMessageOf(response: Response): Promise<string> {
 function toAnswerEvent(event: string, data: string): AnswerEvent | null {
   const payload = parseObject(data);
   switch (event) {
+    case 'conversation':
+      return typeof payload['id'] === 'string' ? { type: 'conversation', id: payload['id'] } : null;
+    case 'status':
+      return isAgentStep(payload['step']) ? { type: 'status', step: payload['step'] } : null;
     case 'tool':
       return typeof payload['name'] === 'string' ? { type: 'tool', name: payload['name'] } : null;
     case 'delta':
@@ -85,6 +104,10 @@ function toAnswerEvent(event: string, data: string): AnswerEvent | null {
     default:
       return null;
   }
+}
+
+function isAgentStep(value: unknown): value is AgentStep {
+  return AGENT_STEPS.includes(value as AgentStep);
 }
 
 function parseObject(data: string): Record<string, unknown> {

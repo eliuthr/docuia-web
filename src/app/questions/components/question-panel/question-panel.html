@@ -1,5 +1,31 @@
 <section [attr.aria-labelledby]="panelId + '-heading'" class="space-y-4">
-  <h2 [id]="panelId + '-heading'" class="text-lg font-semibold text-slate-900">{{ heading() }}</h2>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h2 [id]="panelId + '-heading'" class="text-lg font-semibold text-slate-900">
+      {{ heading() }}
+    </h2>
+    @if (exchanges().length > 0 && !isBusy()) {
+      <button
+        type="button"
+        class="rounded-md border border-slate-400 px-3 py-1.5 text-sm font-semibold text-slate-900 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-800"
+        (click)="startNewConversation()"
+      >
+        New conversation
+      </button>
+    }
+  </div>
+
+  <app-conversation-history
+    [target]="target()"
+    [currentId]="conversationId()"
+    [disabled]="isBusy()"
+    (opened)="openConversation($event)"
+  />
+
+  @if (conversationError()) {
+    <p role="alert" class="text-sm text-red-800">
+      The conversation could not be opened. {{ conversationError() }}
+    </p>
+  }
 
   @if (exchanges().length > 0) {
     <!-- Altura máxima con scroll propio: la conversación no empuja el resto de la página. -->
@@ -27,8 +53,8 @@
                   [textContent]="displayAnswer(exchange.answer)"
                 ></p>
               }
-              @if (exchange.activeTool) {
-                <p class="text-sm italic text-slate-600">{{ exchange.activeTool }}</p>
+              @if (exchange.progress) {
+                <p class="text-sm italic text-slate-600">{{ exchange.progress }}</p>
               } @else if (exchange.status === 'streaming' && !exchange.answer) {
                 <p class="text-sm italic text-slate-600">Thinking…</p>
               }

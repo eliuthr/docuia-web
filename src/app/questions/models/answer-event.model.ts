@@ -1,5 +1,17 @@
-/** Eventos que envía la API mientras responde (ver la spec 004 de la API). */
+/** Paso del agente de la API mientras prepara la respuesta. */
+export type AgentStep = 'classifying' | 'answering' | 'verifying' | 'revising';
+
+export const AGENT_STEPS: readonly AgentStep[] = [
+  'classifying',
+  'answering',
+  'verifying',
+  'revising',
+];
+
+/** Eventos que envía la API mientras responde (ver las specs 004 y 005 de la API). */
 export type AnswerEvent =
+  | { type: 'conversation'; id: string }
+  | { type: 'status'; step: AgentStep }
   | { type: 'tool'; name: string }
   | { type: 'delta'; text: string }
   | { type: 'done' }

@@ -1,8 +1,30 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { API_BASE_URL } from '../../../core/api-base-url';
 import { AnswerEvent, MAX_QUESTION_LENGTH } from '../../models/answer-event.model';
+import { ConversationDetailDto } from '../../models/conversation.model';
+import { flushConversationLists } from '../../testing/flush-conversation-lists';
 import { QuestionRequestError } from '../../services/question-request.error';
 import { QuestionsApi } from '../../services/questions-api';
 import { QuestionPanel } from './question-panel';
+
+const BASE_URL = 'http://api.test';
+const LIST_URL = `${BASE_URL}/conversations`;
+const SETTLE_PASSES = 3;
+
+const STORED_CONVERSATION: ConversationDetailDto = {
+  id: 'conv-7',
+  documentId: null,
+  title: '¿Proveedor?',
+  messageCount: 2,
+  createdAt: '2026-10-26T18:14:11.687Z',
+  updatedAt: '2026-10-26T18:14:47.134Z',
+  messages: [
+    { role: 'user', text: '¿Proveedor?', createdAt: '2026-10-26T18:14:11.687Z' },
+    { role: 'assistant', text: 'Tecnosuministros.', createdAt: '2026-10-26T18:14:47.134Z' },
+  ],
+};
 
 /**
  * Stream controlado por el test: cada `push` entrega un evento y `end`/`fail`
@@ -58,19 +80,35 @@ describe('QuestionPanel', () => {
   let element: HTMLElement;
   let stream: ControlledStream;
   let ask: ReturnType<typeof vi.fn>;
+  let http: HttpTestingController;
+  /** Lo que devuelve la API cada vez que el panel pide la lista de conversaciones. */
+  let storedConversations: object[];
+  let historyRequestCount: number;
 
   beforeEach(async () => {
     stream = new ControlledStream();
-    ask = vi.fn((_target, _question, signal: AbortSignal) => stream.events(signal));
+    ask = vi.fn((_target, _request, signal: AbortSignal) => stream.events(signal));
     TestBed.configureTestingModule({
-      providers: [{ provide: QuestionsApi, useValue: { ask } }],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: API_BASE_URL, useValue: BASE_URL },
+        { provide: QuestionsApi, useValue: { ask } },
+      ],
     });
+    http = TestBed.inject(HttpTestingController);
+    storedConversations = [];
+    historyRequestCount = 0;
+    await createPanel();
+  });
+
+  async function createPanel(): Promise<void> {
     fixture = TestBed.createComponent(QuestionPanel);
     fixture.componentRef.setInput('target', { kind: 'collection' });
     fixture.componentRef.setInput('heading', 'Ask your documents');
     element = fixture.nativeElement as HTMLElement;
-    await fixture.whenStable();
-  });
+    await settle();
+  }
 
   function field(): HTMLTextAreaElement {
     return element.querySelector('textarea') as HTMLTextAreaElement;
@@ -92,12 +130,40 @@ describe('QuestionPanel', () => {
     await settle();
   }
 
-  /** Deja que el generador procese lo que haya en la cola y re-renderiza. */
+  /**
+   * Deja que el generador procese lo que haya en la cola y re-renderiza. Antes
+   * responde la lista de conversaciones, porque `whenStable` esperaría esa petición.
+   */
   async function settle(): Promise<void> {
-    for (let round = 0; round < 5; round++) {
-      await Promise.resolve();
+    // Varias pasadas: la recarga de la lista se pide unas microtareas después del `done`.
+    for (let pass = 0; pass < SETTLE_PASSES; pass++) {
+      for (let round = 0; round < 5; round++) {
+        await Promise.resolve();
+      }
+      TestBed.tick();
+      historyRequestCount += flushConversationLists(http, storedConversations);
     }
     await fixture.whenStable();
+  }
+
+  /** Vuelve a crear el panel para que muestre estas conversaciones guardadas. */
+  async function createPanelWithHistory(conversations: object[]): Promise<void> {
+    storedConversations = conversations;
+    fixture.destroy();
+    await createPanel();
+  }
+
+  function buttonNamed(name: string): HTMLButtonElement | undefined {
+    return Array.from(element.querySelectorAll('button')).find((button) =>
+      button.textContent?.trim().startsWith(name),
+    );
+  }
+
+  async function answerFully(text: string): Promise<void> {
+    stream.push({ type: 'delta', text });
+    stream.push({ type: 'done' });
+    stream.end();
+    await settle();
   }
 
   function answerText(): string {
@@ -113,7 +179,7 @@ describe('QuestionPanel', () => {
 
     expect(ask).toHaveBeenCalledWith(
       { kind: 'collection' },
-      '¿Cuánto suman?',
+      { question: '¿Cuánto suman?', conversationId: null },
       expect.any(AbortSignal),
     );
     expect(field().value).toBe('');
@@ -132,6 +198,95 @@ describe('QuestionPanel', () => {
     await settle();
     expect(answerText()).toContain('Suman 10 COP.');
     expect(answerText()).not.toContain('Searching documents…');
+  });
+
+  it('shows each agent step until a tool or the text replaces it', async () => {
+    await send('¿Cuánto suman?');
+
+    stream.push({ type: 'status', step: 'classifying' });
+    await settle();
+    expect(answerText()).toContain('Understanding the question…');
+
+    stream.push({ type: 'tool', name: 'find_documents' });
+    await settle();
+    expect(answerText()).toContain('Searching documents…');
+    expect(answerText()).not.toContain('Understanding the question…');
+
+    stream.push({ type: 'status', step: 'verifying' });
+    await settle();
+    expect(answerText()).toContain('Checking the answer against your documents…');
+  });
+
+  it('continues the conversation with the id sent by the API', async () => {
+    await send('¿Proveedor?');
+    stream.push({ type: 'conversation', id: 'conv-1' });
+    await answerFully('Tecnosuministros.');
+
+    stream = new ControlledStream();
+    await send('¿Y el total?');
+
+    expect(ask.mock.calls[1][1]).toEqual({ question: '¿Y el total?', conversationId: 'conv-1' });
+  });
+
+  it('reloads the previous conversations after a complete answer', async () => {
+    const requestsBefore = historyRequestCount;
+    await send('¿Proveedor?');
+
+    await answerFully('Tecnosuministros.');
+
+    expect(historyRequestCount).toBe(requestsBefore + 1);
+  });
+
+  it('starts a new conversation on demand', async () => {
+    await send('¿Proveedor?');
+    stream.push({ type: 'conversation', id: 'conv-1' });
+    await answerFully('Tecnosuministros.');
+
+    buttonNamed('New conversation')?.click();
+    await fixture.whenStable();
+
+    expect(element.querySelector('ol')).toBeNull();
+    expect(status()).toBe('New conversation started.');
+    expect(document.activeElement).toBe(field());
+    stream = new ControlledStream();
+    await send('Hola');
+    expect(ask.mock.calls[1][1]).toEqual({ question: 'Hola', conversationId: null });
+  });
+
+  it('hides the new conversation button while an answer streams', async () => {
+    await send('¿Proveedor?');
+
+    expect(buttonNamed('New conversation')).toBeUndefined();
+  });
+
+  it('opens a previous conversation and continues it', async () => {
+    await createPanelWithHistory([STORED_CONVERSATION]);
+
+    buttonNamed('¿Proveedor?')?.click();
+    http.expectOne(`${LIST_URL}/conv-7`).flush(STORED_CONVERSATION);
+    await settle();
+
+    expect(element.querySelector('ol')?.textContent).toContain('Tecnosuministros.');
+    expect(status()).toBe('Conversation loaded.');
+    await send('¿Y el total?');
+    expect(ask.mock.calls[0][1]).toEqual({ question: '¿Y el total?', conversationId: 'conv-7' });
+  });
+
+  it('shows an error when a previous conversation cannot be opened', async () => {
+    await createPanelWithHistory([STORED_CONVERSATION]);
+
+    buttonNamed('¿Proveedor?')?.click();
+    http
+      .expectOne(`${LIST_URL}/conv-7`)
+      .flush(
+        { message: 'Conversation conv-7 not found' },
+        { status: 404, statusText: 'Not Found' },
+      );
+    await settle();
+
+    expect(element.querySelector('[role="alert"]')?.textContent).toContain(
+      'Conversation conv-7 not found',
+    );
   });
 
   it('shows the answer without Markdown bold markers', async () => {
