@@ -18,8 +18,10 @@
   - A collection conversation reopened from the list showed its questions and answers; a
     follow-up ("And how much of that is from Tecnosuministros?") was answered with the history,
     and "thanks" got a conversational reply.
-- Covered by unit tests only: the agent step labels (`status` events), the error shown when a
-  conversation cannot be opened, and opening disabled while an answer streams.
+  - While an answer was being prepared, the answer bubble showed the agent step label
+    ("Understanding the question…").
+- Covered by unit tests only: the error shown when a conversation cannot be opened, and opening
+  disabled while an answer streams.
 - Implementation notes:
   - The running `ng serve` did not pick up the new folders (`conversation-history/`, `testing/`)
     and served the old bundle until it was restarted.
