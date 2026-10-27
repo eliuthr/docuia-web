@@ -36,6 +36,13 @@ ng build
 
 This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
 
+## Deployment
+
+The production build is deployed to AWS (S3 + CloudFront) by the CDK stack in
+`docuia-api/infra` (`npm run deploy` there). The production environment has no fixed API URL:
+the app reads `apiBaseUrl` from `/config.json` before it starts, and the deploy writes that file
+with the API's function URL. The development build uses `http://localhost:3000`.
+
 ## Running unit tests
 
 To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
